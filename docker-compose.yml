@@ -7,7 +7,7 @@ networks:
 services:
   # --- Infrastructure ---
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3.12-management
     container_name: anser_rabbitmq
     ports:
       - "5672:5672"
@@ -27,7 +27,7 @@ services:
       - anser_project_network
 
   consul:
-    image: consul
+    image: hashicorp/consul:1.15
     container_name: anser_consul
     ports:
       - "8500:8500"
@@ -41,29 +41,31 @@ services:
       - EVENTSTORE_CLUSTER_SIZE=1
       - EVENTSTORE_RUN_PROJECTIONS=All
       - EVENTSTORE_START_STANDARD_PROJECTIONS=true
-      - EVENTSTORE_EXT_TCP_PORT=1113
-      - EVENTSTORE_HTTP_PORT=2113
       - EVENTSTORE_INSECURE=true
-      - EVENTSTORE_ENABLE_EXTERNAL_TCP=true
-      - EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP=true
     ports:
-      - "1113:1113"
       - "2113:2113"
     networks:
       - anser_project_network
 
-  # --- Gateways ---
-  queue-gateway:
+  # --- Event Gateway (Web Role: Ingress) ---
+  # [修改點] 服務名稱改為 app
+  app:
     build: 
-      context: ./gateway
+      context: ./event-gateway
       dockerfile: Dockerfile
-    container_name: anser_queue_gateway
+    container_name: app
+    working_dir: /app
+    volumes:
+      # [注意] 這裡仍然建議只掛載 event-gateway 資料夾，避免把 docker-compose.yml 也掛進去
+      - ./event-gateway:/app
     ports:
       - "8080:80"
     environment:
-      - REDIS_HOST=anser_redis
+      - SERVICE_ROLE=web
       - RABBITMQ_HOST=anser_rabbitmq
+      - REDIS_HOST=anser_redis
       - CONSUL_HOST=anser_consul
+      - EVENTSTORE_HOST=anser_eventstore
     depends_on:
       - rabbitmq
       - redis
@@ -71,28 +73,31 @@ services:
     networks:
       - anser_project_network
 
-  api-gateway-worker:
-    build:
-      context: ./api-gateway
+  # --- Event Gateway (Worker Role: Consumer) ---
+  event-gateway-worker:
+    build: 
+      context: ./event-gateway
       dockerfile: Dockerfile
-    container_name: anser_api_gateway
-    # No external ports needed as it consumes from Queue
+    container_name: anser_event_gateway_worker
+    working_dir: /app
+    volumes:
+      - ./event-gateway:/app
     environment:
+      - SERVICE_ROLE=worker
       - RABBITMQ_HOST=anser_rabbitmq
       - REDIS_HOST=anser_redis
+      - CONSUL_HOST=anser_consul
       - EVENTSTORE_HOST=anser_eventstore
+    command: php /app/spark queue:listen
     depends_on:
       - rabbitmq
-      - queue-gateway
-    command: php index.php worker start # Hypothetical command to start Workerman consumer
+      - app  # [修改點] 這裡必須指向新的服務名稱 app
     networks:
       - anser_project_network
 
-  # --- Microservices ---
+  # --- Services ---
   order-service:
-    build:
-      context: ./services/order-service
-      dockerfile: Dockerfile
+    build: ./services/order-service
     container_name: anser_order_service
     environment:
       - RABBITMQ_HOST=anser_rabbitmq
@@ -100,9 +105,7 @@ services:
       - anser_project_network
 
   payment-service:
-    build:
-      context: ./services/payment-service
-      dockerfile: Dockerfile
+    build: ./services/payment-service
     container_name: anser_payment_service
     environment:
       - RABBITMQ_HOST=anser_rabbitmq
