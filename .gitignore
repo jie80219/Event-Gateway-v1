@@ -1,4 +1,4 @@
-/vendor/
+event-gateway/vendor/
 /.env
 /writable/*
 .php-cs-fixer.cache
