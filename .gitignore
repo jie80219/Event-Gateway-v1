@@ -5,3 +5,5 @@ event-gateway/vendor/
 /report/
 /build/
 .phpunit.cache
+writable/logs/*
+!writable/logs/index.html
