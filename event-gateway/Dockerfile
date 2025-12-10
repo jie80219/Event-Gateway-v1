@@ -22,7 +22,8 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
 # 複製設定檔 (請確保這三個檔案也在 event-gateway 資料夾內)
-COPY supervisord.conf /etc/supervisord.conf
+# 將設定檔放到擴充目錄，副檔名必須是 .conf
+COPY supervisord.conf /opt/docker/etc/supervisor.d/consumer.conf
 COPY supervisord.recalc.conf /etc/supervisor/conf.d/recalc.conf
 COPY supervisord.monitor.conf /etc/supervisor/conf.d/monitor.conf
 
