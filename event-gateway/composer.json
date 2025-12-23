@@ -35,7 +35,9 @@
         "psr-4": {
             "App\\": "app/",
             "Config\\": "app/Config/",
-            "SDPMlab\\AnserEDA\\": "src/"
+            "SDPMlab\\AnserEDA\\": "src/",
+            "Anser\\ApiGateway\\": "src/",
+            "Services\\": "Services/"
         },
         "exclude-from-classmap": [
             "**/Database/Migrations/**"

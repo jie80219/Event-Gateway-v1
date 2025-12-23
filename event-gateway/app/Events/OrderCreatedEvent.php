@@ -2,18 +2,25 @@
 
 namespace App\Events;
 
+
 class OrderCreatedEvent
 {
     public string $orderId;
-    public string $userKey;
-    public array $productList;
-    public int $total;
+    public array $productData;
+    public float $totalAmount;
+    public string $createdAt;
 
-    public function __construct(string $orderId, string $userKey, array $productList,int $total)
+    public function __construct(string $orderId, array $productData, float $totalAmount)
     {
         $this->orderId = $orderId;
-        $this->userKey = $userKey;
-        $this->productList = $productList;
-        $this->total = $total;
+        $this->productData = $productData;
+        $this->totalAmount = $totalAmount;
+        $this->createdAt = date('Y-m-d H:i:s');
+    }
+    
+    // Anser-EDA 可能需要這個方法來決定 Routing Key
+    public function getName(): string
+    {
+        return 'OrderCreated'; // 必須對應 Saga 中 #[EventHandler(event: 'OrderCreated')]
     }
 }

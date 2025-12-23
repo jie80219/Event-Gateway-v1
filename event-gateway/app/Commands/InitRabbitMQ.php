@@ -9,30 +9,42 @@ use PhpAmqpLib\Wire\AMQPTable;
 
 class InitRabbitMQ extends BaseCommand
 {
-    /**
-     * The Command's Group
-     *
-     * @var string
-     */
-    protected $group = 'RabbitMQ';
+    protected $group       = 'RabbitMQ';
+    protected $name        = 'rabbitmq:init';
+    protected $description = 'Initialize Event-Gateway Topology (Entry Queue + Anser-EDA Events).';
+    protected $usage       = 'rabbitmq:init [-f]';
+    protected $options     = [
+        '-f' => 'Force reset (Delete existing queues/exchanges before declaring)',
+    ];
 
-    /**
-     * The Command's Name
-     *
-     * @var string
-     */
-    protected $name = 'rabbitmq:init';
+    // =========================================================================
+    // 1. 架構常數定義
+    // =========================================================================
+    const MAIN_EXCHANGE = 'events';     // Anser-EDA 標準 Exchange
+    const EXCHANGE_TYPE = 'direct';     // Direct 模式
 
-    /**
-     * The Command's Description
-     *
-     * @var string
-     */
-    protected $description = 'Initialize RabbitMQ Exchanges, Queues, and Bindings for Event-Gateway.';
+    // Gateway 的入口佇列 (這是你遺失的部分)
+    const ENTRY_QUEUE_NAME = 'anser_gateway_entry_queue';
+    const ENTRY_ROUTING_KEY = 'request.new';
+
+    // =========================================================================
+    // 2. 定義 Anser-EDA 的六個核心事件
+    // =========================================================================
+    // 注意：這裡建議使用完整的 Namespace 類別名稱，以符合 Anser-EDA HandlerScanner 的習慣
+    private $eventQueues = [
+        'OrderCreateRequestedEvent', // 事件 1: 訂單建立請求
+        'InventoryDeductedEvent',    // 事件 2: 庫存已扣除
+        'PaymentProcessedEvent',     // 事件 3: 付款已處理
+        'OrderCreatedEvent',         // 事件 4: 訂單建立成功
+        'RollbackInventoryEvent',    // 事件 5: 補償-庫存回滾
+        'RollbackOrderEvent',        // 事件 6: 補償-訂單取消
+    ];
 
     public function run(array $params)
     {
-        CLI::write("🚀 Starting RabbitMQ Initialization...", 'yellow');
+        $fresh = isset($params['f']) || CLI::getOption('f');
+
+        CLI::write("🚀 [Anser-Gateway] Initializing Hybrid Topology...", 'yellow');
 
         $host = getenv('RABBITMQ_HOST') ?: 'anser_rabbitmq';
         $port = getenv('RABBITMQ_PORT') ?: 5672;
@@ -43,94 +55,94 @@ class InitRabbitMQ extends BaseCommand
             $connection = new AMQPStreamConnection($host, $port, $user, $pass);
             $channel = $connection->channel();
 
-            // ==========================================
-            // 1. 定義常數名稱 (與架構圖對齊)
-            // ==========================================
-            $exchangeName = 'anser_event_bus';      // 事件總線 (Topic)
-            $dlxExchange  = 'anser_dlx';            // 死信交換機
-            $dlqName      = 'anser_dead_letter_queue';
-            
-            // 佇列清單
-            $queues = [
-                'request' => 'anser_request_queue',       // Gateway 入口緩衝
-                'order'   => 'service_request_queue',       // Order Service
-                'payment' => 'service_payment_queue',     // Payment Service
-                'reply'   => 'anser_saga_reply_queue',    // Saga Reply
-            ];
-
-            // ==========================================
-            // 2. 建立 Dead Letter Exchange & Queue (死信機制)
-            // ==========================================
-            CLI::write("   [DLQ] Setting up Dead Letter architecture...", 'cyan');
-            
-            // 宣告死信交換機 (Fanout 模式，無差別接收所有失敗訊息)
-            $channel->exchange_declare($dlxExchange, 'fanout', false, true, false);
-            
-            // 宣告死信佇列
-            $channel->queue_declare($dlqName, false, true, false, false);
-            
-            // 綁定死信佇列
-            $channel->queue_bind($dlqName, $dlxExchange);
-
-
-            // ==========================================
-            // 3. 建立主要 Event Bus
-            // ==========================================
-            CLI::write("   [Bus] Declaring Main Exchange: {$exchangeName}", 'cyan');
-            $channel->exchange_declare($exchangeName, 'topic', false, true, false);
-
-
-            // ==========================================
-            // 4. 建立並綁定各個工作佇列
-            // ==========================================
-            
-            // 設定一般佇列的參數 (發生錯誤或被拒絕時，轉送到 DLX)
-            $queueArgs = new AMQPTable([
-                'x-dead-letter-exchange' => $dlxExchange,
-                // 'x-message-ttl' => 60000 // 可選：訊息存活時間
-            ]);
-
-            foreach ($queues as $role => $queueName) {
-                CLI::write("   [Queue] Declaring queue: {$queueName}", 'light_gray');
-                
-                // 宣告持久化佇列 (Durable = true)
-                $channel->queue_declare($queueName, false, true, false, false, false, $queueArgs);
-
-                // 根據角色設定 Routing Key 綁定
-                switch ($role) {
-                    case 'request':
-                        // Gateway 收到 HTTP 請求後，直接送到這裡
-                        // 這裡可以不綁定 Exchange，直接用 Default Exchange 推送，但綁定比較靈活
-                        $channel->queue_bind($queueName, $exchangeName, 'request.new');
-                        break;
-                    
-                    case 'order':
-                        // Order Service 監聽與訂單相關的命令
-                        $channel->queue_bind($queueName, $exchangeName, 'command.order.#');
-                        $channel->queue_bind($queueName, $exchangeName, 'event.order.#');
-                        break;
-
-                    case 'payment':
-                        // Payment Service 監聽與付款相關的命令
-                        $channel->queue_bind($queueName, $exchangeName, 'command.payment.#');
-                        break;
-
-                    case 'reply':
-                        // Saga 監聽所有服務的回覆 (Reply)
-                        // 通常是 event.*.success 或 event.*.failure
-                        $channel->queue_bind($queueName, $exchangeName, 'reply.#');
-                        break;
-                }
+            // 如果有 -f 參數，先執行清除
+            if ($fresh) {
+                $this->teardown($channel);
             }
+
+            // 執行初始化
+            $this->setup($channel);
 
             $channel->close();
             $connection->close();
 
-            CLI::write("✅ RabbitMQ Initialization Completed Successfully!", 'green');
+            CLI::write("✅ Initialization Completed Successfully!", 'green');
 
         } catch (\Throwable $e) {
             CLI::error("❌ Initialization Failed: " . $e->getMessage());
-            // 不要在這裡 exit，讓 CLI 可以顯示錯誤堆疊
         }
+    }
+
+    private function setup($channel)
+    {
+        CLI::write("🛠️  Setting up Exchange...", 'cyan');
+
+        // 1. 宣告主要 Exchange
+        $channel->exchange_declare(
+            self::MAIN_EXCHANGE,
+            self::EXCHANGE_TYPE,
+            false,
+            true, // durable
+            false
+        );
+        CLI::write("   ├── [Exchange] " . self::MAIN_EXCHANGE . " (" . self::EXCHANGE_TYPE . ") created.", 'light_gray');
+
+        // 2. 建立並綁定 Gateway Entry Queue (入口佇列)
+        CLI::write("🛠️  Setting up Gateway Entry Queue...", 'cyan');
+        
+        $channel->queue_declare(
+            self::ENTRY_QUEUE_NAME, 
+            false, 
+            true, // durable
+            false, 
+            false
+        );
+        
+        $channel->queue_bind(self::ENTRY_QUEUE_NAME, self::MAIN_EXCHANGE, self::ENTRY_ROUTING_KEY);
+        
+        CLI::write("   ├── [Queue] " . self::ENTRY_QUEUE_NAME, 'green');
+        CLI::write("   │    └── Bound Key: " . self::ENTRY_ROUTING_KEY, 'dark_gray');
+
+        // 3. 建立並綁定 Anser-EDA 事件佇列
+        CLI::write("🛠️  Setting up Saga Event Queues...", 'cyan');
+        
+        foreach ($this->eventQueues as $eventName) {
+            // Queue Name 與 Routing Key 通常都設為事件類別名稱
+            $queueName = $eventName;
+            $routingKey = $eventName;
+
+            $channel->queue_declare($queueName, false, true, false, false);
+            $channel->queue_bind($queueName, self::MAIN_EXCHANGE, $routingKey);
+
+            CLI::write("   ├── [Queue] {$queueName}", 'green');
+            CLI::write("   │    └── Bound Key: {$routingKey}", 'dark_gray');
+        }
+    }
+
+    private function teardown($channel)
+    {
+        CLI::write("⚠️  [Fresh Mode] Cleaning up old topology...", 'red');
+
+        // 1. 刪除 Entry Queue
+        try {
+            $channel->queue_delete(self::ENTRY_QUEUE_NAME);
+            CLI::write("   🗑️  Deleted Queue: " . self::ENTRY_QUEUE_NAME, 'light_red');
+        } catch (\Exception $e) {}
+
+        // 2. 刪除 Event Queues
+        foreach ($this->eventQueues as $qName) {
+            try {
+                $channel->queue_delete($qName);
+                CLI::write("   🗑️  Deleted Queue: {$qName}", 'light_red');
+            } catch (\Exception $e) {}
+        }
+
+        // 3. 刪除 Exchange
+        try {
+            $channel->exchange_delete(self::MAIN_EXCHANGE);
+            CLI::write("   🗑️  Deleted Exchange: " . self::MAIN_EXCHANGE, 'light_red');
+        } catch (\Exception $e) {}
+
+        CLI::newLine();
     }
 }

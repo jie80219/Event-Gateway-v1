@@ -84,7 +84,7 @@ class OrderService extends SimpleService
      */
     public function createOrderAction(
         int $userId,
-        string $orderId, 
+        string $orderId,
         array $productDetailList
     ): ActionInterface {
         $productDetailList = array_map(function (OrderProductDetail $productDetail) {
