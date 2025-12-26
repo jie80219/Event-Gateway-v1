@@ -24,7 +24,7 @@ class InitRabbitMQ extends BaseCommand
     const EXCHANGE_TYPE = 'direct';     // Direct 模式
 
     // Gateway 的入口佇列 (這是你遺失的部分)
-    const ENTRY_QUEUE_NAME = 'anser_gateway_entry_queue';
+    const ENTRY_QUEUE_NAME = 'request_queue';
     const ENTRY_ROUTING_KEY = 'request.new';
 
     // =========================================================================

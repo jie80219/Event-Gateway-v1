@@ -1,25 +1,28 @@
 <?php
-
 namespace App\Events;
 
 class OrderCreateRequestedEvent
 {
-    public string $traceId;
+    public array $productList;
     public array $orderData;
+    private ?string $traceId;
 
-    public function __construct(string $traceId, array $orderData)
+    public function __construct(array $orderData, ?string $traceId = null)
     {
-        $this->traceId = $traceId;
         $this->orderData = $orderData;
+        $this->traceId = $traceId;
+
+        $productList = $orderData['product_list'] ?? $orderData['productList'] ?? $orderData;
+        $this->productList = array_values(is_array($productList) ? $productList : []);
     }
 
-    public function getTraceId(): string
-    {
-        return $this->traceId;
-    }
-
-    public function getOrderData(): array
+    public function getData(): array
     {
         return $this->orderData;
+    }
+
+    public function getTraceId(): ?string
+    {
+        return $this->traceId;
     }
 }

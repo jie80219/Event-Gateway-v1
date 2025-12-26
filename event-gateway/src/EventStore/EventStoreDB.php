@@ -49,8 +49,11 @@ class EventStoreDB
             $response = $this->httpClient->post("{$this->eventStoreUrl}/streams/{$streamName}", [
                 'json' => [$payload],
                 'headers' => [
-                    'ES-EventType' => $eventData['eventType'], // ✅ 這行很重要
-                    'ES-EventId' => $eventId
+                    'Content-Type' => 'application/vnd.eventstore.events+json',
+                    'Accept' => 'application/json',
+                    'ES-EventType' => $eventData['eventType'],
+                    'ES-EventId' => $eventId,
+                    'ES-ExpectedVersion' => '-1'
                 ]
             ]);
     

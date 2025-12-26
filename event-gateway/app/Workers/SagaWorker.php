@@ -16,9 +16,9 @@ class SagaWorker extends BaseCommand
     {
         $connection = service('RabbitMQ');
         $channel = $connection->channel();
-        $channel->queue_declare('anser_request_queue', false, true, false, false);
+        $channel->queue_declare('request_queue', false, true, false, false);
 
-        CLI::write(" [*] Waiting for requests in 'anser_request_queue'.", 'green');
+        CLI::write(" [*] Waiting for requests in 'request_queue'.", 'green');
 
         $callback = function ($msg) {
             $job = json_decode($msg->body, true);
@@ -51,7 +51,7 @@ class SagaWorker extends BaseCommand
         };
 
         $channel->basic_qos(null, 1, null);
-        $channel->basic_consume('anser_request_queue', '', false, false, false, false, $callback);
+        $channel->basic_consume('request_queue', '', false, false, false, false, $callback);
 
         while ($channel->is_consuming()) {
             $channel->wait();

@@ -1,6 +1,9 @@
 <?php
 namespace App\Sagas;
-require_once __DIR__ . '/../init.php';
+$initPath = __DIR__ . '/../../init.php';
+if (is_file($initPath)) {
+    require_once $initPath;
+}
 use SDPMlab\Anser\Service\ConcurrentAction;
 use SDPMlab\AnserEDA\Attributes\EventHandler;
 use SDPMlab\AnserEDA\EventBus;
@@ -36,8 +39,7 @@ class OrderSaga extends Saga{
     #[EventHandler]
     public function onOrderCreateRequested(OrderCreateRequestedEvent $event){
         $this->log("Saga Step 1: 收到訂單建立請求");
-        $productList = $event->orderData['productList'] ?? [];
-        $this->userKey = (string)($event->orderData['userKey'] ?? $this->userKey);
+        $productList = $event->productList;
         // 取得最新價格
         foreach ($productList as &$product) {
             $price = $this->productionService
@@ -56,14 +58,12 @@ class OrderSaga extends Saga{
             ->do()->getMeaningData();
         $total=$info['total'] ?? 1000;
         $this->log("[x] 訂單建立成功");
-        $productPayload = array_map(function (OrderProductDetail $detail) {
-            return $detail->toArray();
-        }, $this->productList);
           // 發送下一步消息
         $this->publish(OrderCreatedEvent::class, [
             'orderId' => $orderId,
-            'productData' => $productPayload,
-            'totalAmount' => $total
+            'userKey' => $this->userKey,
+            'productList' => $this->productList,
+            'total' => $total
         ]);   
     }
 
@@ -78,7 +78,7 @@ class OrderSaga extends Saga{
         $concurrent = new ConcurrentAction();
         $actions = [];
 
-        foreach ($event->productData as $index => $product) {
+        foreach ($event->productList as $index => $product) {
             $actions["product_{$index}"] = $this->productionService->reduceInventory($product['p_key'], $event->orderId, $product['amount']);
         }
 
@@ -90,7 +90,7 @@ class OrderSaga extends Saga{
         foreach ($results as $index => $result) {
             $info = $result->getMeaningData();
             if ($this->isSuccess($info)) {
-                $successfulDeductions[] = $event->productData[$index];
+                $successfulDeductions[] = $event->productList[$index];
             } else {
                 $inventoryFailed = true;
                 break;
@@ -100,7 +100,7 @@ class OrderSaga extends Saga{
         if ($inventoryFailed) {
             $this->compensate(RollbackInventoryEvent::class, [
                 'orderId' => $event->orderId,
-                'userKey' => $this->userKey,
+                'userKey' => $event->userKey,
                 'successfulDeductions' => $successfulDeductions,
             ]);
             return;
@@ -108,9 +108,9 @@ class OrderSaga extends Saga{
         */
         $this->publish(InventoryDeductedEvent::class, [
             'orderId' => $event->orderId,
-            'userKey' => $this->userKey,
+            'userKey' => $event->userKey,
             'productList' => $successfulDeductions,
-            'total' => (int)$event->totalAmount
+            'total' => $event->total
         ]);
     }
 

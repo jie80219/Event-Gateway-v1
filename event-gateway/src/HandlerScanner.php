@@ -86,35 +86,66 @@ class HandlerScanner
      */
     private function getClassesInNamespace(string $namespace): array
     {
-        // 讓 "App" 命名空間對應到專案的根目錄
+        $directories = [];
+
+        if (str_starts_with($namespace, 'App\\')) {
+            $appBaseDir = realpath(__DIR__ . '/../app');
+            if ($appBaseDir !== false) {
+                $relativePath = str_replace('\\', '/', substr($namespace, 4));
+                $directories[] = $appBaseDir . '/' . $relativePath;
+            }
+        }
+
         $baseDir = realpath(__DIR__ . '/../');
-        $relativePath = str_replace('\\', '/', str_replace('App\\', '', $namespace));
-        $directory = $baseDir . '/' . $relativePath;
+        if ($baseDir !== false) {
+            $relativePath = str_replace('\\', '/', str_replace('App\\', '', $namespace));
+            $directories[] = $baseDir . '/' . $relativePath;
+        }
 
-        //echo "Scanning directory: $directory\n"; // ✅ Debug 訊息，確認目錄位置
-
-        // 確保目錄存在，否則返回空陣列
-        if (!is_dir($directory)) {
-            echo " [⚠] Directory does not exist: $directory\n";
+        $directories = array_values(array_unique($directories));
+        if (!$directories) {
             return [];
         }
 
-        // 取得該目錄下的所有 `.php` 檔案
-        $files = glob($directory . '/*.php');
+        $foundDirectory = false;
+        $foundFiles = false;
+        $classes = [];
 
-        // 若該目錄沒有任何 PHP 檔案，則輸出錯誤
-        if (!$files) {
-            echo " [⚠] No files found in: $directory\n"; 
+        foreach ($directories as $directory) {
+            if (!is_dir($directory)) {
+                continue;
+            }
+
+            $foundDirectory = true;
+            $files = glob($directory . '/*.php');
+            if (!$files) {
+                continue;
+            }
+
+            $foundFiles = true;
+            foreach ($files as $file) {
+                $className = $namespace . '\\' . basename($file, '.php');
+                #echo "Found class file: $className\n"; // ✅ 確認找到的 Saga 類別
+                $classes[] = $className;
+            }
         }
 
-        $classes = [];
-        foreach ($files as $file) {
-            $className = $namespace . '\\' . basename($file, '.php');
-            #echo "Found class file: $className\n"; // ✅ 確認找到的 Saga 類別
-            $classes[] = $className;
+        if (!$foundDirectory) {
+            foreach ($directories as $directory) {
+                echo " [⚠] Directory does not exist: $directory\n";
+            }
+            return [];
+        }
+
+        if (!$foundFiles) {
+            foreach ($directories as $directory) {
+                if (is_dir($directory)) {
+                    echo " [⚠] No files found in: $directory\n";
+                }
+            }
         }
         
-        return $classes;
+        return array_values(array_unique($classes));
     }
 
     /**

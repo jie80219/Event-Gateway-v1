@@ -48,8 +48,11 @@ class EventBus
         }
     }
 
-    public function publish(string $eventType, array $eventData,string $streamName = 'Streams')
+    public function publish(string $eventType, array $eventData, ?string $streamName = null)
     {
+        if ($streamName === null || $streamName === '') {
+            $streamName = getenv('EVENTSTORE_STREAM') ?: 'order_events';
+        }
         $routingKey = substr(strrchr($eventType, '\\'), 1);
 
         $this->eventStoreDB->appendEvent($streamName, [

@@ -4,7 +4,7 @@
 URL="http://localhost:8080/v1/order"
 
 # 請求總數
-TOTAL_REQUESTS=500
+TOTAL_REQUESTS=100
 
 # 定義獲取毫秒時間戳的函式 (跨平台兼容)
 get_timestamp_ms() {
@@ -32,7 +32,7 @@ do
    # 發送請求 (安靜模式，只抓 HTTP Code)
    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL" \
      -H "Content-Type: application/json" \
-     -d "{\"user_id\": $USER_ID, \"product_id\": 5566, \"amount\": 1, \"note\": \"LoadTest-$i\"}")
+     -d "{\"user_id\": $USER_ID, \"product_list\": [{\"p_key\": 5566, \"amount\": 1}], \"note\": \"LoadTest-$i\"}")
 
    # 顯示進度
    if [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 202 ]; then
