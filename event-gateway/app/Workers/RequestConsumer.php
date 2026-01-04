@@ -1,9 +1,8 @@
 <?php
-require_once __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/../../init.php';
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use SDPMlab\AnserEDA\EventBus;
-use SDPMlab\AnserEDA\HandlerScanner;
 use SDPMlab\AnserEDA\MessageQueue\MessageBus;
 use SDPMlab\AnserEDA\EventStore\EventStoreDB;
 // 移除特定的 Event 引用，改由動態載入
@@ -17,7 +16,6 @@ use SDPMlab\AnserEDA\EventStore\EventStoreDB;
  */
 $eventMapping = [
     'order.create'   => \App\Events\OrderCreateRequestedEvent::class,
-    'order.create.orchestrator' => \App\Events\OrderCreateOrchestratorRequestedEvent::class,
     // TODO: 需要先建立對應 Event 類別後再啟用
     // 'order.cancel'   => \App\Events\OrderCancelRequestedEvent::class,
     // 'payment.process'=> \App\Events\PaymentProcessRequestedEvent::class,
@@ -49,15 +47,6 @@ try {
     $eventStoreDB = new EventStoreDB($eventStoreHost, $eventStorePort, $eventStoreUser, $eventStorePass);
     $eventBus = new EventBus($messageBus, $eventStoreDB);
     
-    // --- [重要] 註冊所有支援的 Handlers ---
-    // 建議：這裡應該寫一個 foreach 迴圈掃描 Config 自動註冊，而非手動一條條寫
-    // 為了演示先保持簡單：
-    $eventBus->registerHandler(\App\Events\OrderCreateOrchestratorRequestedEvent::class, [new \App\Handlers\OrderCreateHandler(), 'handle']);
-    // $eventBus->registerHandler(\App\Events\OrderCancelRequestedEvent::class, [new \App\Handlers\OrderCancelHandler(), 'handle']);
-
-    $handlerScanner = new HandlerScanner();
-    $handlerScanner->scanAndRegisterHandlers('App\\Sagas', $eventBus);
-    
     echo " [*] Event Gateway Consumer started. Waiting for requests...\n";
     
     $callback = function ($msg) use ($eventBus, $eventMapping) {
@@ -82,33 +71,27 @@ try {
         echo " [i] Mapping route '$route' to event '$eventClass'\n";
     
         try {
-            // 3. 動態實例化事件 (Dynamic Instantiation)
-            if (class_exists($eventClass)) {
-                switch ($route) {
-                    case 'order.create':
-                        $productList = $eventData['product_list'] ?? $eventData['productList'] ?? null;
-                        if (!is_array($productList)) {
-                            echo " [!] Error: product_list must be an array.\n";
-                            $msg->ack();
-                            return;
-                        }
-                        $event = new $eventClass($eventData, $traceId);
-                        break;
-
-                    default:
-                        $event = new $eventClass($eventData);
-                        break;
-                }
-
-                // 4. 派發事件 (Dispatch) -> 這會觸發對應的 Handler -> 執行 Saga
-                $eventBus->dispatch($event);
-        
-                echo " [v] Saga Dispatched Successfully for trace: $traceId\n";
-                $msg->ack();
-            } else {
+            if (!class_exists($eventClass)) {
                 throw new Exception("Class $eventClass not found");
             }
-    
+
+            switch ($route) {
+                case 'order.create':
+                    $productList = $eventData['product_list'] ?? $eventData['productList'] ?? null;
+                    if (!is_array($productList)) {
+                        echo " [!] Error: product_list must be an array.\n";
+                        $msg->ack();
+                        return;
+                    }
+                    break;
+            }
+
+            $eventBus->publish($eventClass, array_merge($eventData, [
+                'trace_id' => $traceId
+            ]));
+
+            echo " [v] Event Published Successfully for trace: $traceId\n";
+            $msg->ack();
         } catch (Throwable $e) {
             echo " [!] System Error: " . $e->getMessage() . "\n";
             // 根據錯誤類型決定策略：

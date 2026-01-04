@@ -2,49 +2,53 @@
 
 namespace App\Handlers;
 
-use SDPMlab\AnserEDA\Attributes\EventHandler; 
-use App\Events\OrderCreateOrchestratorRequestedEvent;
-// 注意：這裡是 App\Orchestrators，不是 App\Anser\Orchestrators
-use App\Orchestrators\CreateOrderOrchestrator; 
+use SDPMlab\AnserEDA\Attributes\EventHandler;
+use App\Events\OrderCreateRequestedEvent;
+use App\Orchestrators\CreateOrderOrchestrator;
 
 class OrderCreateHandler
 {
+    /**
+     * 這裡使用 Attribute 標記
+     */
     #[EventHandler] 
-    public function handle(OrderCreateOrchestratorRequestedEvent $event)
+    public function handle(OrderCreateRequestedEvent $event)
     {
-        $data = $event->getData();
-        echo " [x] Handler: 開始處理訂單建立邏輯 (TraceID: " . $event->getTraceId() . ")\n";
+        $traceId = $event->getTraceId();
+        echo " [x] Handler: 開始處理訂單建立邏輯 (TraceID: " . ($traceId ?? 'unknown') . ")\n";
         
+        // 1. 從事件中提取資料
         $eventData = $event->getData();
-        $userId = $eventData['user_id'] ?? null;
-        $products = $eventData['products'] ?? [];
-
-        // 實例化編排器
-        $orchestrator = new CreateOrderOrchestrator();
-
-        // 注入資料 (請確保您的 CreateOrderOrchestrator 有這個方法)
-        if (method_exists($orchestrator, 'setOrderDetails')) {
-            $orchestrator->setOrderDetails($userId, $products);
-        } else {
-             echo " [!] Warning: Orchestrator 缺少 setOrderDetails 方法。\n";
-        }
         
+        // *假設* eventData 結構是: ['user_id' => 1, 'products' => [...]]
+        $userId = $eventData['user_id'] ?? $eventData['userId'] ?? $eventData['userKey'] ?? null;
+        $products = $eventData['productList']
+            ?? $eventData['productList']
+            ?? $eventData['products']
+            ?? $event->productList
+            ?? [];
+
+        if (!$userId || empty($products)) {
+            echo " [!] Error: 訂單資料不完整，無法啟動 Saga。\n";
+            return;
+        }
+
+        // 2. 啟動 Orchestrator
         try {
             echo " [>] 啟動 Saga Orchestrator...\n";
-            
-            // 執行 Saga
-            $result = $orchestrator->build()->process();
-
-            if ($result->isSuccess()) {
-                // 如果您的 Orchestrator 有 getOrderId() 方法
-                // echo " [v] Saga 執行成功！訂單 ID: " . $orchestrator->getOrderId() . "\n";
-                echo " [v] Saga 執行成功！\n";
+            $orchestrator = new CreateOrderOrchestrator();
+            $orchestrator->setOrderDetails($userId, $products);
+            $result = $orchestrator->build();
+            $isSuccess = is_array($result) ? ($result['success'] ?? false) : (bool) $result;
+            if ($isSuccess) {
+                echo " [v] Saga 執行成功！TraceID: " . ($traceId ?? 'unknown') . "\n";
             } else {
                 echo " [x] Saga 執行失敗。\n";
             }
 
         } catch (\Exception $e) {
             echo " [!] Saga 執行發生例外: " . $e->getMessage() . "\n";
+            // 這裡可以考慮是否要發送「失敗事件」回 Queue 或是寫入 Log
         }
     }
 }

@@ -53,7 +53,7 @@ class EventStoreDB
                     'Accept' => 'application/json',
                     'ES-EventType' => $eventData['eventType'],
                     'ES-EventId' => $eventId,
-                    'ES-ExpectedVersion' => '-1'
+                    'ES-ExpectedVersion' => '-2'
                 ]
             ]);
     
