@@ -5,11 +5,14 @@ namespace App\Libraries;
 class ConsulClient
 {
     private string $baseUrl;
+    private ?string $datacenter;
 
-    public function __construct(string $host, int $port)
+    public function __construct(string $host, int $port, string $scheme = 'http', ?string $datacenter = null)
     {
         $host = rtrim($host, '/');
-        $this->baseUrl = "http://{$host}:{$port}";
+        $scheme = $scheme ?: 'http';
+        $this->baseUrl = "{$scheme}://{$host}:{$port}";
+        $this->datacenter = $datacenter ?: null;
     }
 
     public function registerService(array $payload): bool
@@ -28,8 +31,14 @@ class ConsulClient
     public function discoverService(string $serviceName, bool $passingOnly = true): array
     {
         $serviceName = rawurlencode($serviceName);
-        $query = $passingOnly ? '?passing=1' : '';
-        [$status, $body] = $this->request('GET', "/v1/health/service/{$serviceName}{$query}");
+        $query = [];
+        if ($passingOnly) {
+            $query['passing'] = '1';
+        }
+        if ($this->datacenter) {
+            $query['dc'] = $this->datacenter;
+        }
+        [$status, $body] = $this->request('GET', "/v1/health/service/{$serviceName}", null, $query);
         if ($status !== 200 || $body === '') {
             return [];
         }
@@ -38,9 +47,33 @@ class ConsulClient
         return is_array($data) ? $data : [];
     }
 
-    private function request(string $method, string $path, ?array $payload = null): array
+    public function buildHealthUrl(string $serviceName, bool $passingOnly = true): string
+    {
+        $serviceName = rawurlencode($serviceName);
+        $query = [];
+        if ($passingOnly) {
+            $query['passing'] = '1';
+        }
+        if ($this->datacenter) {
+            $query['dc'] = $this->datacenter;
+        }
+        return $this->buildUrl("/v1/health/service/{$serviceName}", $query);
+    }
+
+    public function buildUrl(string $path, array $query = []): string
     {
         $url = $this->baseUrl . $path;
+        if (!$query) {
+            return $url;
+        }
+
+        $queryString = http_build_query($query);
+        return $queryString !== '' ? "{$url}?{$queryString}" : $url;
+    }
+
+    private function request(string $method, string $path, ?array $payload = null, array $query = []): array
+    {
+        $url = $this->buildUrl($path, $query);
         $headers = "Content-Type: application/json\r\n";
 
         $options = [

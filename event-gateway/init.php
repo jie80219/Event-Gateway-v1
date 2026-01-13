@@ -24,7 +24,7 @@ foreach ($namespaceDirs as $prefix => $directory) {
 }
 
 use SDPMlab\Anser\Service\ServiceList;
-use App\Libraries\ServiceDiscovery;
+use App\ServiceDiscovery\ServiceDiscovery;
 
 ServiceList::addLocalService(
     name: "ProductionService",
@@ -47,30 +47,10 @@ ServiceList::addLocalService(
     isHttps: false
 );
 
-$registerGateway = filter_var(getenv('CONSUL_REGISTER_GATEWAY') ?: 'false', FILTER_VALIDATE_BOOLEAN);
-$enableDiscovery = filter_var(getenv('CONSUL_ENABLE_DISCOVERY') ?: 'false', FILTER_VALIDATE_BOOLEAN);
-
-if ($registerGateway || $enableDiscovery) {
-    $serviceDiscovery = new ServiceDiscovery();
-
-    if ($registerGateway) {
-        $serviceDiscovery->registerGateway();
-    }
-
-    if ($enableDiscovery) {
-        $serviceNames = array_filter(array_map('trim', explode(',', getenv('CONSUL_DISCOVERY_SERVICES') ?: '')));
-        foreach ($serviceNames as $serviceName) {
-            $service = $serviceDiscovery->discover($serviceName);
-            if ($service) {
-                ServiceList::addLocalService(
-                    $serviceName,
-                    $service['address'],
-                    (int) $service['port'],
-                    (bool) $service['is_https']
-                );
-            }
-        }
-    }
+$enableDiscovery = getenv('SERVICEDISCOVERY_ENABLED');
+if ($enableDiscovery !== false && filter_var($enableDiscovery, FILTER_VALIDATE_BOOLEAN)) {
+    $discovery = new ServiceDiscovery();
+    ServiceList::setServiceDataHandler([$discovery, 'serviceDataHandler']);
 }
 
 $logDir = __DIR__ . DIRECTORY_SEPARATOR . "Logs";

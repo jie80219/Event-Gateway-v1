@@ -63,6 +63,7 @@ services:
     volumes:
       # [注意] 這裡仍然建議只掛載 event-gateway 資料夾，避免把 docker-compose.yml 也掛進去
       - ./event-gateway:/app
+      - ./Services:/Services
     ports:
       - "8080:80"
     environment:
@@ -92,6 +93,7 @@ services:
     working_dir: /app
     volumes:
       - ./event-gateway:/app
+      - ./Services:/Services
     environment:
       - SERVICE_ROLE=worker
       - RABBITMQ_HOST=anser_rabbitmq

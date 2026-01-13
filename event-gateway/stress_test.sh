@@ -6,6 +6,13 @@ URL="http://localhost:8080/v1/order"
 # 請求總數
 TOTAL_REQUESTS=100
 
+# 使用者 ID 範圍
+USER_IDS=(1 2 3 4 5)
+
+# 產品對照表 (可依實際資料調整)
+PRODUCT_KEYS=(1 2 3 4 5)
+PRODUCT_NAMES=("Product-1" "Product-2" "Product-3" "Product-4" "Product-5")
+
 # 定義獲取毫秒時間戳的函式 (跨平台兼容)
 get_timestamp_ms() {
     # 檢查是否為 macOS (Darwin)
@@ -27,19 +34,22 @@ START_TIME=$(get_timestamp_ms)
 for i in $(seq 1 $TOTAL_REQUESTS)
 do
    # 產生隨機資料
-   USER_ID=$((1000 + i))
+   USER_ID=${USER_IDS[$((RANDOM % ${#USER_IDS[@]}))]}
+   PRODUCT_INDEX=$((RANDOM % ${#PRODUCT_KEYS[@]}))
+   PRODUCT_KEY=${PRODUCT_KEYS[$PRODUCT_INDEX]}
+   PRODUCT_NAME=${PRODUCT_NAMES[$PRODUCT_INDEX]}
    
    # 發送請求 (安靜模式，只抓 HTTP Code)
    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL" \
      -H "Content-Type: application/json" \
-     -d "{\"user_id\": $USER_ID, \"product_list\": [{\"p_key\": 5566, \"amount\": 1}], \"note\": \"LoadTest-$i\"}")
+     -d "{\"user_id\": $USER_ID, \"product_list\": [{\"p_key\": $PRODUCT_KEY, \"amount\": 1}], \"note\": \"LoadTest-$i ($PRODUCT_NAME)\"}")
 
    # 顯示進度
    if [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 202 ]; then
        # 使用 \r 讓游標回到行首，覆蓋輸出，製造計數器效果
-       echo -ne "✅ Req $i: 202 Accepted (Queued) \r"
+       echo -ne "✅ Req $i: user_id=$USER_ID product=$PRODUCT_NAME (p_key=$PRODUCT_KEY) 202 Accepted \r"
    else
-       echo -e "\n❌ Req $i Failed: HTTP $HTTP_CODE"
+       echo -e "\n❌ Req $i Failed: user_id=$USER_ID product=$PRODUCT_NAME (p_key=$PRODUCT_KEY) HTTP $HTTP_CODE"
    fi
 done
 
