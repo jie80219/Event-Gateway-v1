@@ -31,7 +31,8 @@ Example:
 ```bash
 curl -X POST http://localhost:8080/v1/order \
   -H 'Content-Type: application/json' \
-  -d '{"product_list":[{"id":1,"qty":2}]}'
+  -d '{"user_id": 1,"product_list": [{ "p_key": 10, "amount": 1 }]}
+'
 ```
 
 ## Workers
